@@ -91,6 +91,11 @@ def _apply_optim_step_params(optimizer, optim_step_params: OptimStepParams | Non
             raise ValueError(f"{type(optimizer).__name__} does not support optim_step_params key: {key!r}")
 
         expected_type = type(param_groups[0][key])
+        # TinkerCloud M2: hydra-composed configs store betas as list, callers
+        # naturally pass tuple — coerce sequence kinds instead of rejecting
+        if isinstance(value, (list, tuple)) and isinstance(param_groups[0][key], (list, tuple)):
+            value = expected_type(value)
+            normalized_params[key] = value
         if not isinstance(value, expected_type):
             raise TypeError(
                 f"optim_step_params type mismatch for {type(optimizer).__name__}: "
