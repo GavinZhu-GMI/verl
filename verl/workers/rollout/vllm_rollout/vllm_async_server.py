@@ -29,12 +29,18 @@ from vllm import SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.cli.serve import run_headless
 from vllm.entrypoints.openai.api_server import build_app, init_app_state
-from vllm.entrypoints.openai.parser.harmony_utils import get_encoding
+try:  # TinkerCloud M2: vllm 0.11 has harmony_utils at vllm.entrypoints
+    from vllm.entrypoints.openai.parser.harmony_utils import get_encoding
+except ModuleNotFoundError:
+    from vllm.entrypoints.harmony_utils import get_encoding
 from vllm.inputs import TokensPrompt
 from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.usage.usage_lib import UsageContext
-from vllm.utils.argparse_utils import FlexibleArgumentParser
+try:  # TinkerCloud M2: vllm 0.11 exports it from vllm.utils
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+except ModuleNotFoundError:
+    from vllm.utils import FlexibleArgumentParser
 from vllm.v1.engine.async_llm import AsyncLLM
 
 from verl.plugin.platform import get_platform
@@ -776,7 +782,10 @@ class vLLMHttpServer:
             # processes across all DP shards (unlike collective_rpc which only reaches
             # TP workers within a single shard).
             await self.engine.wake_up(tags=tags or self._get_wake_up_tags())
-            await self.engine.reset_prefix_cache(reset_connector=True)
+            try:  # TinkerCloud M2: vllm 0.11 has no reset_connector kwarg
+                await self.engine.reset_prefix_cache(reset_connector=True)
+            except TypeError:
+                await self.engine.reset_prefix_cache()
         elif self.rollout_mode == RolloutMode.COLOCATED:
             # Directly call engine to wake up without sync weights.
             await self.engine.wake_up(tags=self._get_wake_up_tags())
@@ -784,7 +793,10 @@ class vLLMHttpServer:
             # (e.g. MooncakeStoreConnector) whose entries were computed
             # against the previous weights. No-op success when no connector
             # is configured (vLLM scheduler treats it as such).
-            await self.engine.reset_prefix_cache(reset_connector=True)
+            try:  # TinkerCloud M2: vllm 0.11 has no reset_connector kwarg
+                await self.engine.reset_prefix_cache(reset_connector=True)
+            except TypeError:
+                await self.engine.reset_prefix_cache()
         elif self.rollout_mode == RolloutMode.STANDALONE:
             logger.info("skip wake_up in standalone mode")
 
@@ -805,10 +817,14 @@ class vLLMHttpServer:
             # (e.g. MooncakeStoreConnector) whose entries were computed
             # against the previous model weights. With no connector it
             # is a no-op success, so we can pass it unconditionally.
-            await self.engine.reset_prefix_cache(reset_connector=True)
+            try:  # TinkerCloud M2: vllm 0.11 has no reset_connector kwarg
+                await self.engine.reset_prefix_cache(reset_connector=True)
+            except TypeError:
+                await self.engine.reset_prefix_cache()
 
             await self.engine.reset_mm_cache()
-            await self.engine.reset_encoder_cache()
+            if hasattr(self.engine, "reset_encoder_cache"):  # TinkerCloud M2: absent in vllm 0.11
+                await self.engine.reset_encoder_cache()
 
     async def release_kv_cache(self):
         """Release only kv_cache GPU memory, keeping model weights intact.
@@ -1097,7 +1113,8 @@ class vLLMHttpServer:
         else:
             sleep_level = 2
         await self.engine.sleep(level=sleep_level)
-        await self.engine.reset_encoder_cache()
+        if hasattr(self.engine, "reset_encoder_cache"):  # TinkerCloud M2: absent in vllm 0.11
+            await self.engine.reset_encoder_cache()
 
 
 class vLLMReplica(RolloutReplica):
