@@ -25,6 +25,7 @@ from verl.trainer.distillation import is_distillation_enabled
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 from verl.trainer.ppo.utils import create_rl_dataset, create_rl_sampler, need_critic, need_reference_policy
 from verl.utils.config import validate_config
+from verl.utils.import_utils import load_class_from_fqn
 
 
 class BaseTaskRunner:
@@ -215,7 +216,9 @@ class TaskRunner(BaseTaskRunner):
         train_sampler = create_rl_sampler(config.data, train_dataset)
 
         # Initialize the PPO trainer.
-        trainer = RayPPOTrainer(
+        trainer_class_fqn = config.trainer.get("v0_trainer_class")
+        trainer_cls = load_class_from_fqn(trainer_class_fqn, "RayPPOTrainer") if trainer_class_fqn else RayPPOTrainer
+        trainer = trainer_cls(
             config=config,
             tokenizer=tokenizer,
             processor=processor,

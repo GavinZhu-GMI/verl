@@ -585,6 +585,14 @@ class RayPPOTrainer:
 
         return gen_batch
 
+    def _extra_colocated_workers(self) -> dict[str, RayClassWithInitArgs]:
+        """Worker classes a subclass runs in the actor's processes, by worker-group name (`self.all_wg`)."""
+        return {}
+
+    def _after_rollout(self, batch: DataProto, metrics: dict, timing_raw: dict) -> DataProto:
+        """The balanced rollout batch, before its reward is read. A subclass may add to it or replace it."""
+        return batch
+
     def _compute_reward_colocate(self, batch: DataProto) -> tuple[torch.Tensor, dict[str, Any]] | torch.Tensor:
         """
         compute reward use colocate reward model
@@ -844,6 +852,8 @@ class RayPPOTrainer:
             )
             self.resource_pool_to_cls[resource_pool][str(Role.RefPolicy)] = ref_policy_cls
 
+        self.resource_pool_to_cls[actor_rollout_resource_pool].update(self._extra_colocated_workers())
+
         # initialize WorkerGroup
         # NOTE: if you want to use a different resource pool for each role, which can support different parallel size,
         # you should not use `create_colocated_worker_cls`.
@@ -878,6 +888,7 @@ class RayPPOTrainer:
             )
             spawn_wg = wg_dict.spawn(prefix_set=class_dict.keys())
             all_wg.update(spawn_wg)
+        self.all_wg = all_wg
 
         if self.use_critic:
             self.critic_wg = all_wg[str(Role.Critic)]
@@ -1558,6 +1569,7 @@ class RayPPOTrainer:
                             continue
                         images_seqlens_all.extend(multi_modal_input["images_seqlens"].tolist())
                     batch.meta_info["images_seqlens"] = images_seqlens_all
+                    batch = self._after_rollout(batch, metrics, timing_raw)
                     with marked_timer("reward", timing_raw, color="yellow"):
                         # compute reward model score
                         if self.use_rm and "rm_scores" not in batch.batch.keys():
